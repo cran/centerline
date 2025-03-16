@@ -1,3 +1,49 @@
+centerline 0.2.2 (2025-03-16)
+=========================
+
+### UPDATES
+
+  * the `raybevel` package is back on CRAN
+  * Added the explicit R>= 4.1.0 dependency
+
+centerline 0.2.1 (2024-11-05)
+=========================
+
+### UPDATES
+
+  * the `raybevel` package was removed from CRAN on October 22, 2024. It is not a core dependency, but it is crucial for some functions in the `centerline` pkg. To maintain `raybevel::skeletonize` accessibility for the `cnt_skeleton` function, `raybevel` is temporarily installed from GitHub.
+
+centerline 0.2 (2024-10-01)
+=========================
+
+### UPDATES
+
+  * `geom_cnt_*` function family for plotting centerlines with ggplot2
+
+centerline 0.1.3 (2024-09-29)
+=========================
+
+### UPDATES
+
+  * Switched from `rlang` to `checkmate` for type checks
+  * Web-only vignettes to reduce package size
+
+centerline 0.1.2 (2024-09-28)
+=========================
+
+### UPDATES
+
+  * Website launched with some vignettes.
+
+centerline 0.1.1 (2024-09-27)
+=========================
+
+### UPDATES
+
+  * Added a new argument to the `cnt_skeleton()` function — `method`.
+    It should be either `"voronoi"` or `"straight"`. Depending on it, the
+    generating skeleton method will change.
+
 centerline 0.1 (2024-09-24)
 =========================
 

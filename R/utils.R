@@ -1,150 +1,7 @@
-# Inter-class transformers -----------------------------------------------
-# Terra to SF transformer
-# This function is five time faster than
-# st::st_as_sf() due to {wk} package
-terra_to_sf <-
-  function(input) {
-    spatial_data <-
-      terra::as.data.frame(input)
-
-    if (length(spatial_data) == 0) {
-      terra::geom(input, wk = TRUE) |>
-        wk::as_wkt() |>
-        sf::st_as_sf() |>
-        sf::st_set_crs(terra::crs(input))
-    } else {
-      terra::geom(input, wk = TRUE) |>
-        wk::as_wkt() |>
-        sf::st_as_sf() |>
-        sf::st_set_crs(terra::crs(input)) |>
-        cbind(terra::as.data.frame(spatial_data))
-    }
-  }
-
-# Terra to GEOS transformer
-terra_to_geos <-
-  function(input) {
-    input |>
-      sf::st_as_sf() |>
-      geos::as_geos_geometry()
-    # input |>
-    #   terra::geom(wkt = TRUE) |>
-    #   geos::as_geos_geometry(crs = sf::st_crs(input))
-  }
-
-# GEOS to terra transformer
-geos_to_terra <-
-  function(input) {
-    wk_input <- wk::as_wkt(input)
-
-    terra::vect(
-      as.character(wk_input),
-      crs = wk::wk_crs(wk_input)$wkt
-    )
-  }
-
-# Class checks -----------------------------------------------------------
-# Check that all objects share the same class
-check_same_class <- function(obj1, obj2, obj3) {
-  class1 <- class(obj1)
-  class2 <- class(obj2)
-  class3 <- class(obj3)
-
-  class_check <-
-    base::identical(class1, class2) &&
-      base::identical(class1, class3)
-
-  if (!class_check) {
-    stop("All objects must share the same class.")
-  }
-}
-
-# Get geometry type of the spatial object
-get_geom_type <-
-  function(input) {
-    if (inherits(input, "sf") || inherits(input, "sfc")) {
-      sf::st_geometry_type(input, by_geometry = TRUE)
-    } else if (inherits(input, "SpatVector")) {
-      terra::geomtype(input)
-    } else if (inherits(input, "geos_geometry")) {
-      geos::geos_type(input)
-    }
-  }
-
-# Checks for polygon geometries
-check_polygons <- function(input) {
-  # Check if input is of class 'sf', 'sfc', 'SpatVector', or 'geos_geometry'
-  if (!inherits(input, c("sf", "sfc", "SpatVector", "geos_geometry"))) {
-    stop(
-      "Input is not of
-      class 'sf', 'sfc', 'SpatVector', or 'geos_geometry'."
-    )
-  }
-
-  # Check if geometry type is POLYGON
-  geom_type <- get_geom_type(input)
-  if (
-    !all(geom_type %in%
-      c("POLYGON", "polygons", "polygon", "multipolygon", "MULTIPOLYGON"))
-  ) {
-    stop("Input does not contain 'POLYGON' or 'MULTIPOLYGON' geometries.")
-  }
-
-  # If checks pass
-  return(TRUE)
-}
-
-# Checks for linestring geometries
-check_lines <- function(input) {
-  # Check if input is of class 'sf', 'sfc', 'SpatVector', or 'geos_geometry'
-  if (!inherits(input, c("sf", "sfc", "SpatVector", "geos_geometry"))) {
-    stop(
-      "Input skeleton is not of
-      class 'sf', 'sfc', 'SpatVector', or 'geos_geometry'."
-    )
-  }
-
-  # Check if geometry type is LINESTRING
-  geom_type <- get_geom_type(input)
-  if (
-    !all(geom_type %in%
-      c(
-        "LINESTRING", "lines", "linestring",
-        "multilinestring", "MULTILINESTRING"
-      ))) {
-    stop("Input skeleton does not contain 'LINESTRING' geometry.")
-  }
-
-  # If checks pass
-  return(TRUE)
-}
-
-# Checks for points geometries
-check_points <- function(input) {
-  # Check if input is of class 'sf', 'sfc',
-  # 'SpatVector', or 'geos_geometry'
-  if (!inherits(input, c("sf", "sfc", "SpatVector", "geos_geometry"))) {
-    stop(
-      "Input point is not of
-      class 'sf', 'sfc', 'SpatVector', or 'geos_geometry'."
-    )
-  }
-
-  # Check if geometry type is POINT
-  geom_type <- get_geom_type(input)
-  if (!all(geom_type %in% c("POINT", "points", "point"))) {
-    stop("Input point does not contain 'POINT' geometry.")
-  }
-
-  # If checks pass
-  return(TRUE)
-}
-
 # Polygon simplifications ------------------------------------------------
 # Fast simplification, similiar to {mapshaper} ms_simplify
 geos_ms_simplify <-
-  function(geom,
-           keep) {
+  function(geom, keep) {
     perimeter_length <-
       geos::geos_length(geom)
 
@@ -163,8 +20,7 @@ geos_ms_simplify <-
 
 # Fast densification, similar behavior to {mapshaper} ms_simplify
 geos_ms_densify <-
-  function(geom,
-           keep) {
+  function(geom, keep) {
     perimeter_length <-
       geos::geos_length(geom)
 
@@ -179,6 +35,33 @@ geos_ms_densify <-
       geom,
       tolerance = point_density / (keep)
     )
+  }
+
+geos_ksmooth <-
+  function(input) {
+    do.call(c, lapply(input, geos_ksmooth_master))
+  }
+
+geos_ksmooth_master <-
+  function(input) {
+    check_package("smoothr")
+    checkmate::assert_class(input, "geos_geometry")
+
+    crs <- wk::wk_crs(input)
+
+    num_coords <-
+      geos::geos_num_coordinates(input)
+    cent_length <-
+      geos::geos_length(input)
+    simpl_tolerance <- cent_length / num_coords
+
+    m <- input |>
+      geos::geos_simplify(tolerance = simpl_tolerance) |>
+      geos_to_matrix()
+
+    m <- smoothr::smooth_ksmooth(m, wrap = FALSE)
+
+    geos::geos_make_linestring(m[, 1], m[, 2], crs = crs)
   }
 
 # Reverse lines if needed ------------------------------------------------
@@ -245,4 +128,57 @@ find_closest_nodes <-
       geos::geos_strtree()
 
     geos::geos_nearest(nodes_geos, geos_graph)
+  }
+
+# Straight skeleton helpers ----------------------------------------------
+# Extract ring from polygon
+# If the i == 1, it returns the polygon itself
+get_geos_ring <-
+  function(geos_obj, i) {
+    geos_obj |>
+      geos::geos_ring_n(i) |>
+      geos::geos_polygonize() |>
+      geos::geos_unnest()
+  }
+
+# Get list of inner rings coordinates in a form of a list of matrices
+list_geos_inner_rings <-
+  function(geos_obj, num_rings) {
+    num_iter <- seq(from = 2, to = num_rings + 1)
+
+    lapply(num_iter, function(i) {
+      get_geos_ring(geos_obj, i)
+    }) |>
+      lapply(geos_to_matrix)
+  }
+
+# Convert raybevel object to geos_geometry object
+raybevel_to_geos <-
+  function(rayskeleton, crs = NULL) {
+    # Keep only inner links
+    sk_links <- rayskeleton$links[!rayskeleton$links$edge, ]
+    # Create a data.frame of source nodes
+    source_nodes <- rayskeleton$nodes[c("id", "x", "y")]
+    names(source_nodes) <- c("source", "start_x", "start_y")
+    # Create a data.frame of destination nodes
+    destination_nodes <- rayskeleton$nodes[c("id", "x", "y")]
+    names(destination_nodes) <- c("destination", "end_x", "end_y")
+
+    # Build a linestring geometry
+    sk_new <-
+      merge(x = sk_links, y = source_nodes, by = "source", all.x = TRUE) |>
+      merge(y = destination_nodes, by = "destination", all.x = TRUE)
+
+    sk_geometry <-
+      sprintf(
+        "LINESTRING(%s %s, %s %s)",
+        sk_new$start_x,
+        sk_new$start_y,
+        sk_new$end_x,
+        sk_new$end_y
+      )
+
+    geos::as_geos_geometry(sk_geometry, crs = crs) |>
+      geos::geos_make_collection() |>
+      geos::geos_line_merge()
   }
